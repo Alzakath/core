@@ -646,6 +646,7 @@ class _SyncRenderer:
             self.url = self.url.rstrip('/') + '/' + url
 
         self.id = var.Var(self.id)
+        self.view = None
 
     def Renderer(self, *args, **kw):
         # If no arguments are given, this renderer becomes the parent of the
@@ -730,10 +731,10 @@ class _SyncRenderer:
         if not isinstance(action, Action):
             action = self.default_action(action)
 
-        action.register(self, component, tag, action_type, with_request, args, kw)
+        action.register(self, component, self.view, tag, action_type, with_request, args, kw)
 
     def start_rendering(self, view, args, kw):
-        pass
+        self.view = view
 
     def end_rendering(self, output):
         return output

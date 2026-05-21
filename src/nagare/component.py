@@ -14,8 +14,10 @@ replace and call a component. It's described in `ComponentModel`
 """
 
 import random
+import operator
 import contextlib
-from functools import partial
+from functools import reduce, partial
+from collections import defaultdict
 
 from nagare import renderable, continuation, presentation
 from nagare.services import router
@@ -55,13 +57,13 @@ class Component(renderable.Renderable):
         """
         self._becomes(o, view, url)
 
-        self._actions = {}
-        self._new_actions = {}
+        self._actions = defaultdict(dict)
+        self._new_actions = defaultdict(dict)
 
         self._cont = None
         self._on_answer = None
 
-    def register_action(self, action, with_request, render, args, kw):
+    def register_action(self, view, action, with_request, render, args, kw):
         """Register an action for this component.
 
         In:
@@ -79,7 +81,7 @@ class Component(renderable.Renderable):
         except TypeError:
             action_id = random.randint(10000000, 99999999)
 
-        self._new_actions[action_id] = (action, with_request, render, args, kw)
+        self._new_actions[view][action_id] = (action, with_request, render, args, kw)
 
         return action_id
 
@@ -92,17 +94,12 @@ class Component(renderable.Renderable):
         Return:
           - the actions of this component
         """
-        old, self._actions, self._new_actions = self._actions, self._new_actions, {}
+        old, self._actions, self._new_actions = self._actions, self._new_actions, defaultdict(dict)
 
         if not clear_actions:
-            views = {action[0] for action in self._actions.values()}
+            self._actions |= {view: action for view, action in old.items() if view not in self._actions}
 
-            # Keep only the old actions of a view if no new actions were registered
-            old = {k: v for k, v in old.items() if v[0] not in views}
-
-            self._actions.update(old)
-
-        return self._actions
+        return reduce(operator.or_, self._actions.values(), {})
 
     def reduce(self, clean_callbacks, result):
         result.callbacks.update(self.serialize_actions(clean_callbacks))
@@ -245,7 +242,7 @@ def render_task(self, renderer, comp, view, *args, **kw):
     if not hasattr(self, 'content'):
         self.run()
 
-    return self.content.on_answer(comp.answer if comp._on_answer else lambda r: None).render(renderer, *args, **kw)
+    return self.content.on_answer(comp.answer if comp._on_answer else lambda r=None: None).render(renderer, *args, **kw)
 
 
 # -----------------------------------------------------------------------------------------------------

@@ -33,7 +33,7 @@ class Action:
         self.action = action
 
     @staticmethod
-    def _register(component, action_type, with_request, args, kw, action, render):
+    def _register(component, view, action_type, with_request, args, kw, action, render):
         callbacks_service = callbacks.callbacks_service
         if callbacks_service is not None:
             client_params = {k[:-2]: kw.pop(k) for k in list(kw) if k.endswith('_c')}
@@ -41,7 +41,7 @@ class Action:
         else:
             client_params = ''
 
-        action_id = component.register_action(action, with_request, render, args, kw)
+        action_id = component.register_action(view, action, with_request, render, args, kw)
         action_id = '_action%02X%08d' % (action_type, action_id)
 
         return action_id, client_params
@@ -50,9 +50,9 @@ class Action:
     def generate_render(renderer):
         return None
 
-    def register(self, renderer, component, tag, action_type, with_request, args, kw, action=None):
+    def register(self, renderer, component, view, tag, action_type, with_request, args, kw, action=None):
         action_id, client_params = self._register(
-            component, action_type, with_request, args, kw, action or self.action, self.generate_render(renderer)
+            component, view, action_type, with_request, args, kw, action or self.action, self.generate_render(renderer)
         )
 
         tag.set_action(action_id, client_params)
@@ -181,10 +181,10 @@ class Update(Action):
     def render(self, renderer, *args, **kw):
         return self.javascript(renderer, *args, **kw)
 
-    def register(self, renderer, component, tag, action_type, with_request, args, kw, action=None):
+    def register(self, renderer, component, view, tag, action_type, with_request, args, kw, action=None):
         tag.set_action_async()
 
-        return super().register(renderer, component, tag, action_type, with_request, args, kw, action)
+        return super().register(renderer, component, view, tag, action_type, with_request, args, kw, action)
 
 
 class Updates(Update):
@@ -208,12 +208,13 @@ class Updates(Update):
 
             callbacks_service.execute_callback(action_type, action, args, kw)
 
-    def register(self, renderer, component, tag, action_type, with_request, args, kw):
+    def register(self, renderer, component, view, tag, action_type, with_request, args, kw):
         actions = [self.action] + [update.action for update in self.updates]
 
         return super().register(
             renderer,
             component,
+            view,
             tag,
             action_type & ~callbacks.WITH_CONTINUATION_CALLBACK,
             True,
