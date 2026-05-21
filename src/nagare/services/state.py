@@ -57,10 +57,8 @@ class StateService(SessionService):
         return {Component: lambda comp: comp.reduce(clean_callbacks, result)}
 
     def _handle_request(self, request, start_response, response, **params):
-        write = start_response(response.status, response.headerlist)
+        if self.send_response:
+            start_response(response.status, response.headerlist)(response.body)
+            response = None
 
-        if self.send_response and (write is not None):
-            write(response.body)
-            return lambda environ, start_response: []
-
-        return lambda environ, start_response: [response.body]
+        return response
