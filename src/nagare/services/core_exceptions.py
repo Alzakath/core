@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2026 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -31,11 +31,10 @@ def exception_handler(exception, exceptions_service, request, **context):
 
 class ExceptionsService(http_exceptions.ExceptionsService):
     LOAD_PRIORITY = http_exceptions.ExceptionsService.LOAD_PRIORITY + 2
-    CONFIG_SPEC = dict(
-        http_exceptions.ExceptionsService.CONFIG_SPEC,
-        exception_handlers="""string_list(default=list(
+    CONFIG_SPEC = http_exceptions.ExceptionsService.CONFIG_SPEC | {
+        'exception_handlers': """string_list(default=list(
             'nagare.services.core_exceptions:exception_handler',
             'nagare.services.http_exceptions:exception_handler',
             'nagare.services.http_exceptions:http_exception_handler'
-        ))""",
-    )
+        ))"""
+    }

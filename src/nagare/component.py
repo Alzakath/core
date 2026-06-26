@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2026 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -14,10 +14,12 @@ replace and call a component. It's described in `ComponentModel`
 """
 
 import random
+import operator
 import contextlib
+from functools import reduce, partial
+from collections import defaultdict
 
 from nagare import renderable, continuation, presentation
-from nagare.partial import Partial
 from nagare.services import router
 
 _marker = object()
@@ -32,6 +34,10 @@ class AnswerWithoutOnAnswer(Exception):
 
 
 AnswerWithoutCall = AnswerWithoutOnAnswer
+
+
+class TaskWithoutCall(Exception):
+    pass
 
 
 class Component(renderable.Renderable):
@@ -51,13 +57,13 @@ class Component(renderable.Renderable):
         """
         self._becomes(o, view, url)
 
-        self._actions = {}
-        self._new_actions = {}
+        self._actions = defaultdict(dict)
+        self._new_actions = defaultdict(dict)
 
         self._cont = None
         self._on_answer = None
 
-    def register_action(self, action, with_request, render, args, kw):
+    def register_action(self, view, action, with_request, render, args, kw):
         """Register an action for this component.
 
         In:
@@ -75,7 +81,7 @@ class Component(renderable.Renderable):
         except TypeError:
             action_id = random.randint(10000000, 99999999)
 
-        self._new_actions[action_id] = (action, with_request, render, args, kw)
+        self._new_actions[view][action_id] = (action, with_request, render, args, kw)
 
         return action_id
 
@@ -88,23 +94,18 @@ class Component(renderable.Renderable):
         Return:
           - the actions of this component
         """
-        old, self._actions, self._new_actions = self._actions, self._new_actions, {}
+        old, self._actions, self._new_actions = self._actions, self._new_actions, defaultdict(dict)
 
         if not clear_actions:
-            views = {action[0] for action in self._actions.values()}
+            self._actions |= {view: action for view, action in old.items() if view not in self._actions}
 
-            # Keep only the old actions of a view if no new actions were registered
-            old = {k: v for k, v in old.items() if v[0] not in views}
-
-            self._actions.update(old)
-
-        return self._actions
+        return reduce(operator.or_, self._actions.values(), {})
 
     def reduce(self, clean_callbacks, result):
         result.callbacks.update(self.serialize_actions(clean_callbacks))
         result.components += 1
 
-        return super(Component, self).__reduce__()
+        return super().__reduce__()
 
     def _becomes(self, o, view, url):
         """Replace a component by an object or an other component.
@@ -144,24 +145,6 @@ class Component(renderable.Renderable):
 
         return self
 
-    def _call1(self, o, view, url):
-        # Keep my configuration
-        previous_o = self.o
-        previous_view = self.view
-        previous_url = self.url
-
-        # Replace me by the object and wait its answer
-        self._becomes(o, view, url)
-
-        previous_cont, self._cont = self._cont, continuation.get_current()
-
-        return (previous_o, previous_view, previous_url, previous_cont)
-
-    def _call2(self, previous_o, previous_view, previous_url, previous_cont):
-        self._cont = previous_cont
-
-        self._becomes(previous_o, previous_view, previous_url)
-
     def call(self, o=_marker, view=presentation.ANON_VIEW, url=None):
         # Call an other object or component
 
@@ -176,14 +159,14 @@ class Component(renderable.Renderable):
 
         # Return:
         #   - the answer of the called object
-        #
-        # .. note:
-        #   - the code of this function will be serialized.
-        #     Keep it to a minimal (no docstring ...)
 
-        p = self._call1(o, view, url)
-        r = self._cont.switch()
-        self._call2(*p)
+        previous = self.o, self.view, self.url, self._cont
+
+        self._becomes(o, view, url)
+        self._cont = continuation.Continuation()
+        r = self._cont.suspend()
+
+        self.o, self.view, self.url, self._cont = previous
 
         return r
 
@@ -201,7 +184,7 @@ class Component(renderable.Renderable):
             return self._on_answer(r) if r is not _marker else self._on_answer()
         else:
             # I was called by on other component. Return my answer to it
-            self._cont.switch(r if r is not _marker else None)
+            self._cont.resume(r if r is not _marker else None)
             raise CallAnswered()
 
     def on_answer(self, f, *args, **kw):
@@ -211,7 +194,7 @@ class Component(renderable.Renderable):
           - ``f`` -- function to call with my answer
           - ``args``, ``kw`` -- ``f`` parameters
         """
-        self._on_answer = Partial(f, *args, **kw) if args or kw else f
+        self._on_answer = partial(f, *args, **kw) if args or kw else f
         return self
 
 
@@ -231,7 +214,7 @@ def route(self, url, http_method, request, response, url2):
 # -----------------------------------------------------------------------------------------------------
 
 
-class Task(object):
+class Task:
     """A ``Task`` encapsulated a simple method. A ``task`` is typically used to manage other components by calling them.
 
     .. warning::
@@ -239,36 +222,38 @@ class Task(object):
        A ``Task`` is an object, not a component: you must wrap it into a ``Component()`` to use it.
     """
 
-    def _go(self, comp):
-        # If I was not called by an other component and nobody is listening to
-        # my answer,  I'm the root component. So I call my ``go()`` method forever
-        if comp._cont is comp._on_answer is None:
-            while True:
-                self.go(comp)
+    def run(self):
+        self.content = Component(self).on_answer(self.raise_task_without_call)
+        call_wrapper(self._go, self.content)
 
-        # Else, answer with the return of the ``go`` method
-        comp.answer(self.go(comp))
+    def raise_task_without_call(self, _):
+        raise TaskWithoutCall(self)
+
+    def _go(self, comp):
+        while True:
+            comp.answer(self.go(comp))
 
     def go(self, comp):
         raise NotImplementedError()
 
 
 @presentation.render_for(Task)
-def render_task(self, renderer, comp, view):
-    continuation.Continuation(self._go, comp)
+def render_task(self, renderer, comp, view, *args, **kw):
+    if not hasattr(self, 'content'):
+        self.run()
 
-    return comp.render(renderer.parent)
+    return self.content.on_answer(comp.answer if comp._on_answer else lambda r=None: None).render(renderer, *args, **kw)
 
 
 # -----------------------------------------------------------------------------------------------------
 
 
-class Dummy(object):
+class Empty:
     pass
 
 
-@presentation.render_for(Dummy)
-def render_dummy(*args):
+@presentation.render_for(Empty, '*')
+def render_empty(*args):
     pass
 
 
@@ -291,7 +276,7 @@ def call_wrapper(action, *args, **kw):
       - ``args`` -- positional parameters of the callable
       - ``kw`` -- keywords parameters of the callable
     """
-    return continuation.Continuation(action, *args, **kw)
+    return continuation.delimit(action, *args, **kw)
 
 
 def answer_wrapper(comp, *args):

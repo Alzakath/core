@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2026 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -16,12 +16,12 @@ import re
 import json
 import base64
 import contextlib
+from functools import partial
 from collections import defaultdict
 
 from webob import exc
 from tinyaes import AES
 
-from nagare import partial
 from nagare.services import plugin
 from nagare.component import CallAnswered, call_wrapper
 
@@ -47,13 +47,16 @@ class CallbackLookupError(LookupError):
 
 
 class CallbacksService(plugin.Plugin):
+    CONFIG_SPEC = plugin.Plugin.CONFIG_SPEC | {
+        'key': 'string(min_len=24, max_len=24, default=None, help="base64-encoded 16 bytes key")'
+    }
     LOAD_PRIORITY = 110
 
-    def __init__(self, name, dist, **config):
+    def __init__(self, name, dist, key=None, **config):
         global callbacks_service
-        super(CallbacksService, self).__init__(name, dist, **config)
+        super().__init__(name, dist, **config)
 
-        self.key = os.urandom(16)
+        self.key = os.urandom(16) if key is None else base64.b64decode(key)
         callbacks_service = self
 
     @staticmethod
@@ -109,7 +112,7 @@ class CallbacksService(plugin.Plugin):
         actions = defaultdict(list)
 
         for name, value in request.params.items():
-            if isinstance(value, (str, type(''))) and value.startswith(ACTION_PREFIX):
+            if isinstance(value, str) and value.startswith(ACTION_PREFIX):
                 name = value  # For the radio buttons, the callback identifier is the value, not the name
 
             m = ACTION_SYNTAX.match(name)
@@ -132,11 +135,10 @@ class CallbacksService(plugin.Plugin):
             if f is None:
                 continue
 
-            callback_params = self.decode_client_params(client_params or request.params.get('_p'))
-            callback_params.update(kw)
+            callback_params = self.decode_client_params(client_params) | kw
 
             if with_request:
-                f = partial.Partial(f, request, response)
+                f = partial(f, request, response)
 
             if type_ == WITH_VALUES_CALLBACK:
                 self.execute_callback(callback_type, f, callback_args + (tuple(values),), callback_params)
@@ -144,7 +146,9 @@ class CallbacksService(plugin.Plugin):
                 for value in values:
                     args = callback_args
 
-                    if type_ == WITH_VALUE_CALLBACK:
+                    if type_ == LINK_CALLBACK:
+                        callback_params = self.decode_client_params(value) | kw
+                    elif type_ == WITH_VALUE_CALLBACK:
                         args += (value,)
                     elif (type_ == IMAGE_CALLBACK) and complement:
                         args += (complement == '.y', int(values[0]))
@@ -152,5 +156,10 @@ class CallbacksService(plugin.Plugin):
                     self.execute_callback(callback_type, f, args, callback_params)
 
         return chain.next(
-            callbacks=callbacks, request=request, response=response, root=root, render=render or root.render, **params
+            callbacks=callbacks,
+            request=request,
+            response=response,
+            root=root,
+            render=(render or (lambda h: '')) if request.is_xhr or render else root.render,
+            **params,
         )

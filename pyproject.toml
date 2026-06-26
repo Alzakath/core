@@ -1,20 +1,19 @@
-# =-
-# (C)opyright Net-ng 2008-2024
+# --
+# Copyright (c) 2014-2026 Net-ng.
+# All rights reserved.
 #
-# This is Net-ng proprietary source code
-# Any reproduction modification or use without prior written
-# approval from Net-ng is strictly forbidden.
-# =-
+# This software is licensed under the BSD License, as described in
+# the file LICENSE.txt, which you should have received as part of
+# this distribution.
+# --
 
 [build-system]
 requires = [
     'setuptools',
     'wheel',
     'setuptools_scm',
-    'closure',
     'webassets',
-    'PyYAML',
-    'dukpy',
+    'PyYAML'
 ]
 build-backend = 'backend'
 backend-path = ['src/nagare/custom_build']
@@ -48,13 +47,12 @@ classifiers = [
     'Topic :: Internet :: WWW/HTTP :: Dynamic Content',
     'Topic :: Software Development :: Libraries :: Python Modules',
 ]
-requires-python = '>=3.8'
+requires-python = '>=3.10'
 dependencies = [
     'WebOb',
     "legacy-cgi ; python_full_version>='3.13.0a1'",
     'filetype',
     'tinyaes',
-    'nagare-partial',
     'nagare-editor',
     'nagare-server-mvc',
     'nagare-services-sessions',
@@ -65,7 +63,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     'nagare-services-webassets',
-    'closure',
     'PyYAML',
     'sphinx',
     'sphinx_rtd_theme',
@@ -119,6 +116,9 @@ ignore = ['COM812', 'D10', 'D401', 'S311', 'S305', 'ISC001']
 isort.length-sort = true
 pydocstyle.convention = 'google'
 flake8-quotes.inline-quotes = 'single'
+
+[tool.ruff.lint.per-file-ignores]
+'tests/*' = ['S101', 'S108', 'S301', 'S320']
 
 [tool.pytest.ini_options]
 testpaths = ['tests']

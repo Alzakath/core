@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2026 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -9,7 +9,6 @@
 
 
 from nagare.component import Component
-from nagare.continuation import Tasklet
 from nagare.services.http_session import SessionService
 
 
@@ -24,7 +23,6 @@ def persistent_id(o, clean_callbacks, result):
     - ``result`` -- object with attributes:
       - ``callbacks`` -- merge of the callbacks from all the components
       - ``session_data`` -- dict persistent_id -> object of the objects to store into the session
-      - ``tasklets`` -- set of the serialized tasklets
 
     Return:
     - the persistent id or ``None``
@@ -36,31 +34,31 @@ def persistent_id(o, clean_callbacks, result):
         result.session_data[id_] = o
         r = str(id_)
 
-    elif (Tasklet is not None) and (type(o) is Tasklet):
-        result.tasklets.add(o)
-
     return r
 
 
 class StateService(SessionService):
     LOAD_PRIORITY = SessionService.LOAD_PRIORITY + 1
-    CONFIG_SPEC = dict(
-        SessionService.CONFIG_SPEC,
-        states_history='boolean(default=True)',
-        session_cookie={'name': 'string(default="")'},
-    )
+    CONFIG_SPEC = SessionService.CONFIG_SPEC | {
+        'states_history': 'boolean(default=True)',
+        'session_cookie': {'name': 'string(default="")'},
+        'send_response': 'boolean(default=True)',
+    }
 
-    def __init__(self, name, dist, services_service, session_service, **config):
-        services_service(super(StateService, self).__init__, name, dist, **config)
+    def __init__(self, name, dist, send_response, services_service, session_service, **config):
+        services_service(super().__init__, name, dist, send_response=send_response, **config)
 
         session_service.set_persistent_id(persistent_id)
         session_service.set_dispatch_table(self.set_dispatch_table)
 
+        self.send_response = send_response
+
     def set_dispatch_table(self, clean_callbacks, result):
         return {Component: lambda comp: comp.reduce(clean_callbacks, result)}
 
-    @staticmethod
-    def _handle_request(request, start_response, response, **params):
-        start_response(response.status, response.headerlist)(response.body)
+    def _handle_request(self, request, start_response, response, **params):
+        if self.send_response:
+            start_response(response.status, response.headerlist)(response.body)
+            response = None
 
-        return lambda environ, start_response: []
+        return response

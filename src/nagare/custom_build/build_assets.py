@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2026 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -14,10 +14,7 @@ import gzip
 
 
 def build_assets():
-    from webassets import filter, script
-    from dukpy.webassets import BabelJS
-
-    filter.register_filter(BabelJS)
+    from webassets import script
 
     status = script.main(['-c', 'conf/assets.yaml', 'build', '--no-cache']) or 0
     if status == 0:
